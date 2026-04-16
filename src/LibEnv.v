@@ -1,0 +1,1664 @@
+Set Implicit Arguments.
+Require Import 
+  Arith
+  Equivalence
+  Morphisms
+  List
+  LibVar
+  LibTactic.
+Import ListNotations.
+
+Definition env (A : Type) := list (var * A)%type.
+
+Open Scope vars_scope.
+Declare Scope env_scope.
+
+Section Definitions.
+  Variable A : Type.
+
+Definition key (e : nat * A) := fst e.
+Definition val (e : nat * A) := snd e.
+
+Definition dom (m : env A) : vars :=
+  fold_right (fun e vars => \{key e} \u vars) 
+    \{} (m).
+
+Definition concat (E F : env A) : env A := F ++ E.
+Definition empty : env A := [].
+
+Definition single (x : nat) (T : A) :=
+  [(x,T)].
+
+Fixpoint remove (l: env A) (pid : nat) :=
+  match l with
+  | nil => nil
+  | (pid', v) :: t =>
+    if pid =? pid' then t
+    else (pid', v) :: (remove t pid)
+  end.
+
+Fixpoint substitute (pos : env A) k v :=
+  match pos with
+  | nil => nil
+  | (pid, p) :: pos' =>
+    if k =? pid then (pid, v) :: pos'
+    else (pid, p) :: (substitute pos' k v)
+  end.
+
+End Definitions.
+
+Arguments empty {A}.
+
+Notation "\[]" := (empty) : env_scope.
+
+Open Scope env_scope.
+
+Notation "x ~ T" := (single x T) 
+  (at level 49, left associativity): env_scope.
+
+Notation "x # E" := (x \notin (dom E))
+  (at level 67) : env_scope.
+
+Notation "E ; F" := (concat E F)
+  (at level 66, left associativity) : env_scope.
+
+
+Section MoreDefinitions.
+
+Variables A : Type.
+
+Inductive ok : env A -> Prop :=
+  | ok_empty : ok \[]
+  | ok_push : forall E x T,
+      ok E -> x # E -> ok (E ; x ~ T).
+
+Fixpoint get (k : var) (E : env A) {struct E} : option A :=
+  match E with
+  | nil => None
+  | (x,v) :: E' => if k =? x then Some v else get k E'
+  end.
+
+Definition binds x v E :=
+  get x E = Some v.
+
+Lemma env_ind : forall (P : env A -> Prop),
+  (P empty) ->
+  (forall E x v, P E -> P (E ; x ~ v)) ->
+  (forall E, P E).
+Proof.
+  induction E.
+  auto. destruct a. apply H0. assumption.
+Qed.
+
+Lemma binds_reconstruct: forall x v (l : env A),
+  binds x v l ->
+  exists l1 l2, l = l1 ++ [(x, v)] ++ l2.
+Proof.
+  induction l using env_ind; simpl; intros.
+  - inversion H.
+  - unfold binds in H. simpl in H.
+    destruct (x =? x0)eqn:Heq.
+    -- inversion H; subst.
+      exists []. exists l.
+      eapply Nat.eqb_eq in Heq.
+      subst; intuition.
+    -- apply IHl in H.
+      destruct H as [l1 [l2 Htmp]].
+      subst.
+      exists ((x0, v0)::l1).
+      exists l2. reflexivity.
+Qed.
+
+Lemma binds_same: forall (req: env A) pid qb qb',
+  binds pid qb req ->
+  binds pid qb' req ->
+  qb = qb'.
+Proof.
+  intros. unfold binds in *.
+  rewrite H in H0.
+  inversion H0; subst.
+  reflexivity.
+Qed.
+
+End MoreDefinitions.
+
+Ltac binds_ind :=
+  intros;
+  match goal with
+  | [ H : binds _ _ ?E |- _ ] =>
+    unfold binds in *; induction E using env_ind
+  end;
+  simpl; try discriminate.
+
+Section StructureProperties.
+
+Variable A : Type.
+Implicit Types E F : env A.
+
+Lemma concat_empty_r : forall E,
+  E ; empty = E.
+Proof.
+  simpl. reflexivity.
+Qed.
+
+Lemma get_notin_eq: forall x inv inv' pid (pid_inv : A),
+  x <> pid ->
+  get x (inv ++ (pid, pid_inv) :: inv') =
+  get x (inv ++ inv').
+Proof.
+  induction inv; simpl; intros.
+  - apply Nat.eqb_neq in H.
+    rewrite H. reflexivity.
+  - destruct a.
+    destruct (x =? v)eqn:Heq.
+    -- reflexivity.
+    -- apply IHinv. assumption.
+Qed.
+
+Lemma binds_middle_neq : forall x x1 v v1 (E : env A) F,
+  binds x v (E ++ F) ->
+  x <> x1 ->
+  ok (E ++ (x1, v1) :: F) ->
+  binds x v (E ++ (x1, v1) :: F).
+Proof.
+  intros. unfold binds.
+  rewrite get_notin_eq; auto.
+Qed.
+
+Lemma get_notin_env: forall (inv : LibEnv.env A) inv' x,
+  x # inv ->
+  get x (inv ++ inv') =
+  get x inv'.
+Proof.
+  induction inv; simpl; intros.
+  - reflexivity.
+  - destruct a.
+    apply notin_union in H. intuition.
+    assert (x =? v = false).
+    apply Nat.eqb_neq.
+    apply notin_neq in H0; intuition.
+    rewrite H.
+    apply IHinv; auto.
+Qed.
+
+End StructureProperties.
+
+Section Properties.
+
+Variable A B : Type.
+Implicit Types k x : var.
+Implicit Types v : A.
+Implicit Types E F G : env A.
+Implicit Types f : A -> B.
+Implicit Types r : var -> var.
+
+
+Lemma binds_concat_inv : forall x v E1 E2,
+  binds x v (E1 ; E2) ->
+     (binds x v E2)
+  \/ (x # E2 /\ binds x v E1).
+Proof.
+  induction E2 using env_ind; simpl; intros.
+  - right. split. set_op. intuition.
+  - unfold binds in *. simpl in *.
+    eq_contra.
+    right. split. apply notin_union. intuition.
+    apply Nat.eqb_neq in Exx. intro. simpl in H1.
+    intuition. eq_contra. assumption.
+Qed.
+
+Lemma binds_concat_right : forall x v E1 E2,
+  binds x v E2 ->
+  binds x v (E1 ; E2).
+Proof.
+  unfold binds. intros.
+  induction E2 using env_ind; simpl in *.
+  - discriminate.
+  - destruct (x =? x0) eqn:Exx.
+    -- auto.
+    -- intuition.
+Qed.
+
+Lemma concat_assoc : forall E F G,
+  E ; (F ; G) = (E ; F) ; G.
+Proof.
+  intros. unfold concat.
+  rewrite app_assoc. reflexivity.
+Qed.
+
+Lemma binds_push_neq: forall x1 x2 v1 v2 E,
+  binds x1 v1 E -> x1 <> x2 -> binds x1 v1 (E ; x2 ~ v2).
+Proof.
+  unfold binds. simpl; intros.
+  destruct (x1 =? x2) eqn: Exx.
+  - eq_contra.
+  - assumption.
+Qed.
+
+
+Lemma binds_push_neq_inv : forall x1 x2 v1 v2 E,
+  binds x1 v1 (E ; x2 ~ v2) -> x1 <> x2 -> binds x1 v1 E.
+Proof.
+  unfold binds. intros. simpl in H.
+  simpl in H. destruct (x1 =? x2) eqn:Exx.
+  - eq_contra.
+  - assumption.
+Qed. 
+
+Lemma notin_dom_push: forall x x0 v0 E,
+x # E; x0 ~ v0 -> x \notin \{x0} /\ x # E.
+Proof.
+  unfold "#". simpl; split.
+  - intro. destruct H0; try intuition.
+    subst. apply H. apply in_union.
+    left. simpl. left; reflexivity.
+  - apply notin_union in H. intuition.
+Qed.
+
+
+Lemma notin_dom_concat: forall x E1 E2,
+x # E1 ; E2 -> x # E1 /\ x # E2.
+Proof.
+  induction E2 using env_ind; simpl; intros.
+  - split. assumption. apply notin_empty.
+  - apply notin_union in H. split. intuition.
+    apply notin_union. intuition.
+Qed.
+
+Lemma binds_concat_left : forall x v E1 E2,
+  binds x v E1 ->
+  x # E2 ->
+  binds x v (E1 ; E2).
+Proof.
+  intros.
+  induction E2 using env_ind.
+  - assumption.
+  - rewrite concat_assoc.
+    apply binds_push_neq.
+    apply notin_dom_push in H0. intuition.
+    simpl in H0. apply notin_union in H0.
+    destruct H0. intro. apply H0. simpl.
+    intuition.
+Qed.
+
+Lemma binds_neq_middle: forall F E x x1 v v1 v1',
+  binds x v (E ++ [(x1, v1)] ++ F) ->
+  x <> x1 ->
+  binds x v (E ++ [(x1, v1')] ++ F).
+Proof.
+  intros.
+  apply binds_concat_inv in H. intuition.
+  - eapply binds_concat_right; eauto.
+  - apply binds_concat_inv in H2. intuition.
+    -- unfold binds in H1. simpl in H1.
+      apply Nat.eqb_neq in H0.
+      rewrite H0 in H1. inversion H1.
+    -- eapply binds_concat_left; eauto.
+      eapply binds_push_neq; eauto.
+Qed.
+
+Lemma ok_push_inv : forall E x v,
+  ok (E ; x ~ v) -> ok E /\ x # E.
+Proof.
+  intros. inversion H; subst. intuition.
+Qed.
+
+Lemma binds_in : forall x v E,
+binds x v E -> x \in dom E.
+Proof.
+  binds_ind.
+  apply in_union. simpl in H.
+  eq_contra.
+  left. simpl; intuition.
+Qed.
+
+Lemma binds_fresh_inv : forall x v E,
+  binds x v E -> x # E -> False.
+Proof.
+  intros. apply H0. apply binds_in in H; assumption.
+Qed.
+
+Lemma binds_concat_left_ok : forall x v E1 E2,
+  ok (E1 ; E2) ->
+  binds x v E1 ->
+  binds x v (E1 ; E2).
+Proof.
+  intros. induction E2 using env_ind.
+  - simpl. assumption.
+  - rewrite concat_assoc.
+    rewrite concat_assoc in H.
+    apply ok_push_inv in H.
+    apply binds_push_neq. intuition.
+    intro. subst.
+    apply binds_fresh_inv in H0.
+    intuition. destruct H.
+    apply notin_dom_concat in H1. intuition.
+Qed.
+
+Lemma binds_weaken: forall x a E F G,
+  binds x a (E ; G) ->
+  ok (E ; F ; G) ->
+  binds x a (E ; F ; G).
+Proof.
+  intros. apply binds_concat_inv in H.
+  destruct H.
+  - apply binds_concat_right. assumption.
+  - rewrite <-concat_assoc in *.
+    apply binds_concat_left_ok; intuition.
+Qed.
+
+Lemma ok_concat_inv : forall E F,
+  ok (E ; F) -> ok E /\ ok F.
+Proof.
+  induction F using env_ind; simpl; intros.
+  - intuition. constructor.
+  - destruct (ok_push_inv H).
+    intuition. apply notin_dom_concat in H1. 
+    apply ok_push; intuition.
+Qed.
+
+Lemma ok_middle_inv : forall E F x v,
+  ok (E ; x ~ v ; F) -> x # E /\ x # F.
+Proof.
+  induction F using env_ind; intros.
+  - destruct (ok_push_inv H).
+    split; [assumption|apply notin_empty].
+  - simpl in H.
+    destruct (ok_push_inv H).
+    simpl in IHF.
+    apply IHF in H0. intuition.
+    apply notin_dom_concat in H1. intuition.
+    simpl. apply notin_union. intuition.
+    apply notin_dom_push in H0. intuition.
+    intro. apply H1. simpl. simpl in H0. intuition.
+Qed.
+
+Lemma binds_remove : forall E2 E1 E3 x v,
+  binds x v (E1 ; E2 ; E3) ->
+  x # E2 ->
+  binds x v (E1 ; E3).
+Proof.
+  intros. apply binds_concat_inv in H.
+  destruct H.
+  - apply binds_concat_right. intuition.
+  - apply binds_concat_left.
+    destruct H. apply binds_concat_inv in H1.
+    destruct H1.
+    -- apply binds_fresh_inv in H1. destruct H1.
+      assumption.
+    -- intuition.
+    -- intuition.
+Qed.
+
+Lemma binds_subst : forall x2 v2 x1 v1 E1 E2,
+  binds x1 v1 (E1 ; x2 ~ v2 ; E2) ->
+  x1 <> x2 ->
+  binds x1 v1 (E1 ; E2).
+Proof.
+  intros. apply binds_remove in H. assumption.
+  simpl. apply notin_neq. assumption.
+Qed.
+
+Lemma binds_concat_left_inv : forall x v E1 E2,
+  binds x v (E1 ; E2) ->
+  x # E2 ->
+  binds x v E1.
+Proof.
+  intros. apply binds_concat_inv in H.
+  destruct H.
+  - apply binds_fresh_inv in H. intuition.
+    assumption.
+  - intuition.
+Qed.
+
+Lemma get_push : forall k x v E,
+  get k (E ; x ~ v) =
+    if k =? x
+      then Some v
+      else get k E.
+Proof.
+  intros. eq_contra.
+  - subst. simpl. rewrite (Nat.eqb_refl x).
+    reflexivity.
+  - simpl. apply Nat.eqb_neq in Exx; rewrite Exx.
+    reflexivity.
+Qed.
+
+Lemma binds_push_inv : forall x1 v1 x2 v2 E,
+  binds x1 v1 (E ; x2 ~ v2) ->
+     (x1 = x2 /\ v1 = v2)
+  \/ (x1 <> x2 /\ binds x1 v1 E).
+Proof.
+  unfold binds. intros. rewrite get_push in H.
+  eq_contra. subst. inversion H; intuition.
+Qed.
+
+Lemma binds_push_eq : forall x T E,
+  binds x T (E ; x ~ T).
+Proof.
+  intros. unfold binds. simpl.
+  rewrite (Nat.eqb_refl x). reflexivity.
+Qed.
+
+Lemma binds_push_eq_inv : forall x v1 v2 E,
+  binds x v1 (E ; x ~ v2) -> v1 = v2.
+Proof.
+  intros. apply binds_push_inv in H.
+  destruct H.
+  - intuition.
+  - exfalso. intuition.
+Qed.
+
+Lemma binds_middle_eq_inv : forall x E1 E2 v1 v2,
+  binds x v1 (E1 ; x ~ v2 ; E2) ->
+  ok (E1 ; x ~ v2 ; E2) ->
+  v1 = v2.
+Proof.
+  intros. apply ok_middle_inv in H0.
+  apply binds_concat_left_inv in H.
+  - apply binds_push_eq_inv in H. assumption.
+  - intuition.
+Qed.
+
+Lemma binds_middle_eq: forall x v (E : env A) F,
+  ok (E ++ (x, v) :: F) ->
+  binds x v (E ++ (x, v) :: F).
+Proof.
+  intros.
+  unfold binds.
+  rewrite get_notin_env.
+  simpl. rewrite Nat.eqb_refl. reflexivity.
+  apply ok_middle_inv in H; intuition.
+Qed.
+
+Lemma ok_x1_neq_x2 : forall E x1 T1 x2 T2,
+  ok (E ; (x1 ~ T1) ; (x2 ~ T2)) ->
+  x1 <> x2.
+Proof.
+  intros. inversion H; subst.
+  simpl in H4. div_notin. apply notin_neq in H0.
+  intuition.
+Qed.
+
+Lemma binds_comm : forall x T E x1 T1 x2 T2,
+  ok (E; x1 ~ T1; x2 ~ T2) ->
+  binds x T (E; x1 ~ T1; x2 ~ T2) ->
+  binds x T (E; x2 ~ T2; x1 ~ T1).
+Proof.
+  intros.
+  generalize (ok_x1_neq_x2 H); intro.
+  unfold binds in *. rewrite <-H0. simpl.
+  destruct (x =? x1) eqn: Exx1;
+  destruct (x =? x2) eqn: Exx2; auto.
+  apply Nat.eqb_eq in Exx1, Exx2. subst.
+  intuition.
+Qed.
+
+Lemma notin_concat: forall x E F,
+x # E /\ x # F <-> x # E; F.
+Proof.
+  induction F using env_ind; simpl; split; intros.
+  - intuition.
+  - intuition. apply notin_empty.
+  - apply notin_union.
+    destruct H.
+    apply notin_union in H0. intuition.
+  - apply notin_union in H.
+    split. intuition.
+    apply notin_union. intuition.
+Qed.
+
+Lemma notin_dom_concat_inv: forall x E1 E2,
+  x # E1 /\ x # E2 -> x # E1 ; E2.
+Proof.
+  induction E2 using env_ind; simpl; intros.
+  - intuition.
+  - intuition.
+    apply notin_union in H1.
+    intuition. apply notin_union; intuition.
+Qed.
+
+Lemma ok_middle: forall F E x v v',
+  ok (E ++ [(x, v)] ++ F) ->
+  ok (E ++ [(x, v')] ++ F).
+Proof.
+  induction E using env_ind; simpl; intros.
+  - inversion H; subst.
+    econstructor; eauto.
+  - inversion H; subst.
+    econstructor; eauto.
+    eapply notin_dom_concat_inv; eauto.
+    eapply notin_concat in H4.
+    intuition.
+Qed.
+
+End Properties.
+
+Ltac div_notin_dom :=
+  repeat match goal with
+  | [H : _ # _ ; _ |- _ ] => 
+    apply notin_dom_concat in H; destruct H
+  end.
+
+Ltac notin_dom_solve :=
+  div_notin_dom;
+  repeat (match goal with
+  | [ |-  _ # _ ; _] => 
+    apply notin_concat
+  end;
+  intuition).
+
+Ltac env_rw :=
+  repeat (rewrite concat_empty_r in * || rewrite concat_assoc in *).
+
+Ltac simpl_ok :=
+  repeat match goal with
+  | [ H : ok (?E ; ?x ~ ?v) |- _ ]
+      => apply ok_push_inv in H; destruct H
+  end
+  ;
+  repeat match goal with
+  | [ |- ok (_ ; ?x ~ ?T)]
+      => apply ok_push
+  end.
+
+Ltac env_solve :=
+  subst; env_rw; intros;
+  notin_dom_solve; simpl_ok;
+  intuition; notin_solve; eauto.
+
+Section MoreProperties.
+
+Variable A : Type.
+Implicit Types E F : env A.
+
+Lemma ok_remove : forall F E G,
+  ok (E ; F ; G) -> ok (E ; G).
+Proof.
+  induction G using env_ind; simpl; intros.
+  - apply ok_concat_inv in H. intuition.
+  - inversion H; subst. constructor. intuition.
+    notin_dom_solve.
+Qed.
+
+Lemma ok_comm : forall E x1 T1 x2 T2,
+  ok (E ; (x1 ~ T1) ; (x2 ~ T2)) ->
+  ok (E ; (x2 ~ T2) ; (x1 ~ T1)).
+Proof.
+  intros. constructor. constructor;
+  inversion H; subst; inversion H2; subst.
+  assumption. simpl in H4. apply notin_union in H4.
+  intuition. simpl. apply notin_union.
+  apply ok_middle_inv in H; intuition.
+Qed.
+
+Lemma ok_concat_comm: forall E F,
+  ok (E; F) ->
+  ok (F; E).
+Proof.
+  induction E using env_ind; intros.
+  - simpl. unfold ";" in H. rewrite app_nil_r in H. 
+    assumption.
+  - rewrite concat_assoc. constructor.
+    apply IHE. generalize (ok_remove _ _ _ H); intro.
+    assumption.
+    apply ok_middle_inv in H. notin_dom_solve.
+Qed.
+
+Lemma ok_ExF_xEF: forall (F E: env A) x,
+  ok (x :: (E ++ F)) ->
+  ok (E ++ (x :: F)).
+Proof.
+  intros. eapply ok_concat_comm. simpl.
+  destruct x.
+  econstructor; eauto.
+  inversion H; subst.
+  eapply ok_concat_comm; eauto.
+  inversion H; subst.
+  apply notin_concat in H4.
+  apply notin_concat. intuition.
+Qed.
+
+Lemma ok_remove_middle_inv : forall F E x (v : A),
+  ok (E ++ (x, v) :: F) -> ok (E ++ F) /\ (x # E /\ x # F).
+Proof.
+  intros. split.
+  - eapply ok_remove with (F:=[(x,v)]) in H; eauto.
+  - eapply ok_middle_inv in H; intuition.
+Qed.
+
+Lemma notin_get_none: forall pid (inv : env A),
+  pid # inv ->
+  get pid inv = None.
+Proof.
+  induction inv using env_ind; simpl; intros.
+  - reflexivity.
+  - apply notin_union in H. intuition.
+    apply notin_neq in H0.
+    apply Nat.eqb_neq in H0.
+    rewrite H0. assumption.
+Qed.
+
+Lemma binds_notin_neq : forall E x T y,
+  binds x T E ->
+  y # E ->
+  x <> y.
+Proof.
+  intros. apply binds_in in H.
+  unfold "#" in H0. intro. subst. intuition.
+Qed.
+
+Lemma notin_dom_push_get: forall x E x' T,
+  x # E ->
+  x \notin \{ x' } ->
+  x # E; x' ~ T.
+Proof.
+  intros. env_solve.
+Qed.
+
+Lemma binds_middle_neq_any_v : forall x x1 v v1 v2 (E : env A) F,
+  binds x v (E ++ (x1, v1) :: F) ->
+  x <> x1 ->
+  binds x v (E ++ (x1, v2) :: F).
+Proof.
+  intros. 
+  apply binds_concat_inv in H. intuition.
+  apply binds_concat_right. assumption.
+  apply binds_concat_inv with (E2:=[(x1, v1)]) in H2.
+  intuition.
+  unfold binds in H1. simpl in H1.
+  apply Nat.eqb_neq in H0. rewrite H0 in H1. discriminate.
+  apply binds_concat_left; auto.
+  apply binds_concat_left with (E2:=[(x1, v2)]); auto.
+Qed.
+
+Lemma ok_remove_notin: forall (l : env A) pid,
+  ok l ->
+  pid # (remove l pid).
+Proof.
+  induction 1; simpl; intros.
+  - apply notin_empty.
+  - destruct (pid =? x)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq. subst.
+      assumption.
+    -- unfold "#". simpl.
+      apply notin_union. intuition.
+      apply notin_neq.
+      apply Nat.eqb_neq in Heq; intuition.
+Qed.
+
+Lemma remove_preserves_notin: forall (l : env A) pid n,
+  pid # l ->
+  pid # (remove l n).
+Proof.
+  induction l; simpl; intros.
+  - apply notin_empty.
+  - destruct a.
+    destruct (n =? v)eqn:Heq.
+    -- apply notin_union in H; intuition.
+    -- unfold "#". simpl.
+      apply notin_union.
+      apply Nat.eqb_neq in Heq.
+      apply notin_union in H.
+      intuition.
+Qed.
+
+Lemma remove_neq_preserves_binds: forall (l : env A) pid n v,
+  binds pid v l ->
+  n <> pid ->
+  binds pid v (remove l n).
+Proof.
+  induction l; simpl; intros.
+  - assumption.
+  - destruct a.
+    destruct (n =? v0)eqn:Heq.
+    -- unfold binds in H. simpl in H.
+      rewrite Nat.eqb_eq in Heq. subst.
+      assert (Heq: pid =? v0 = false).
+      apply Nat.eqb_neq; intuition.
+      rewrite Heq in H. assumption.
+    -- unfold binds in H.
+      simpl in H.
+      destruct (pid =? v0)eqn:Heq'.
+      --- inversion H; subst.
+        unfold binds. simpl.
+        rewrite Heq'. reflexivity.
+      --- unfold binds. simpl.
+        rewrite Heq'.
+        apply IHl; auto.
+Qed.
+
+Lemma remove_preserves_ok: forall (l : env A) n,
+  ok l ->
+  ok (remove l n).
+Proof.
+  induction 1; simpl; intros.
+  - econstructor.
+  - destruct (n =? x)eqn:Heq.
+    -- assumption.
+    -- econstructor; eauto.
+      eapply remove_preserves_notin; eauto.
+Qed.
+
+Lemma substitute_preserves_notin: forall (l : env A) pid k v,
+  pid # l ->
+  pid # (substitute l k v).
+Proof.
+  induction l; simpl; intros.
+  - apply notin_empty.
+  - destruct a.
+    destruct (k =? v0)eqn:Heq.
+    -- apply notin_union in H; intuition.
+      unfold "#". simpl.
+      apply notin_union. intuition.
+    -- unfold "#". simpl.
+      apply notin_union.
+      apply Nat.eqb_neq in Heq.
+      apply notin_union in H.
+      intuition.
+Qed.
+
+Lemma substitute_preserves_ok: forall (l : env A) k v,
+  ok l ->
+  ok (substitute l k v).
+Proof.
+  induction 1; simpl; intros.
+  - econstructor.
+  - destruct (k =? x)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst.
+      econstructor; eauto.
+    -- econstructor; eauto.
+      eapply substitute_preserves_notin; eauto.
+Qed.
+
+Lemma remove_notin_app: forall (l1 : env A) l2 n,
+  n # l1 ->
+  remove (l1 ++ l2) n = l1 ++ (remove l2 n).
+Proof.
+  induction l1; simpl; intros.
+  - reflexivity.
+  - destruct a. apply notin_union in H.
+    destruct (n =? v)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq. subst.
+      intuition. apply notin_neq in H0.
+      simpl in H0. intuition.
+    -- f_equal. apply IHl1. intuition.
+Qed.
+
+Lemma substitute_notin_app: forall (l1 : env A) l2 n v,
+  n # l1 ->
+  substitute (l1 ++ l2) n v = l1 ++ (substitute l2 n v).
+Proof.
+  induction l1; simpl; intros.
+  - reflexivity.
+  - destruct a. apply notin_union in H.
+    destruct (n =? v0)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq. subst.
+      intuition. apply notin_neq in H0.
+      simpl in H0. intuition.
+    -- f_equal. apply IHl1. intuition.
+Qed.
+
+Lemma substitute_eq_binds_v': forall (l : env A) pid v v',
+  binds pid v l ->
+  binds pid v' (substitute l pid v').
+Proof.
+  induction l; simpl; intros.
+  - inversion H.
+  - destruct a.
+    unfold binds in *.
+    simpl in *.
+    destruct (pid =? v0)eqn:Heq.
+    -- simpl. rewrite Heq.
+      reflexivity.
+    -- simpl.
+      rewrite Heq.
+      eapply IHl; eauto.
+Qed.
+
+Lemma substitute_neq_preserves_binds: forall (l : env A) pid pid' v v',
+  binds pid v l ->
+  pid' <> pid ->
+  binds pid v (substitute l pid' v').
+Proof.
+  induction l; simpl; intros.
+  - inversion H.
+  - destruct a.
+    unfold binds in *.
+    simpl in *.
+    destruct (pid =? v0)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst.
+      destruct (pid' =? v0)eqn:Heq'.
+      --- apply Nat.eqb_eq in Heq'.
+        intuition.
+      --- simpl in *.
+        rewrite Nat.eqb_refl.
+        assumption.
+    -- destruct (pid' =? v0)eqn:Heq'.
+      --- apply Nat.eqb_eq in Heq'.
+        subst. simpl in *.
+        rewrite Heq. assumption.
+      --- simpl in *.
+        rewrite Heq.
+        apply IHl; auto.
+Qed.
+
+Lemma substitute_notin_eq: forall (pc : env A) pid v,
+  pid # pc ->
+  substitute pc pid v = pc.
+Proof.
+  induction pc; simpl; intros.
+  - reflexivity.
+  - apply notin_union in H. intuition.
+    destruct a; simpl in *.
+    destruct (pid =? v0)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq; subst.
+      apply notin_neq in H0; intuition.
+    -- apply Nat.eqb_neq in Heq.
+      f_equal.
+      eapply IHpc; eauto.
+Qed.
+
+Lemma remove_preserves_binds_notin: forall (l : env A) pid pid0 v,
+  binds pid v (remove l pid0) ->
+  pid <> pid0 ->
+  binds pid v l.
+Proof.
+  induction l; simpl; intros.
+  - inversion H.
+  - destruct a.
+    unfold binds. simpl.
+    destruct (pid =? v0)eqn:Heq.
+    -- assert (pid0 =? v0 = false).
+      apply Nat.eqb_eq in Heq. subst.
+      apply Nat.eqb_neq; intuition.
+      rewrite H1 in H.
+      unfold binds in H. simpl in H.
+      rewrite Heq in H. assumption.
+    -- destruct (pid0 =? v0)eqn:Heq'.
+      + apply Nat.eqb_eq in Heq'. subst.
+        assumption.
+      + unfold binds in H. simpl in H.
+        rewrite Heq in H.
+        eapply IHl; eauto.
+Qed.
+
+Lemma remove_neq_preserves_in: forall (l : env A) pid pid0,
+  pid \in dom (remove l pid0) ->
+  pid <> pid0 ->
+  pid \in dom l.
+Proof.
+  induction l; simpl; intros.
+  - inversion H.
+  - destruct a.
+    unfold binds. simpl.
+    destruct (pid =? v)eqn:Heq.
+    -- assert (pid0 =? v = false).
+      apply Nat.eqb_eq in Heq. subst.
+      apply Nat.eqb_neq; intuition.
+      rewrite H1 in H.
+      apply Nat.eqb_eq in Heq.
+      subst.
+      apply in_union. left.
+      simpl. intuition.
+    -- destruct (pid0 =? v)eqn:Heq'.
+      + apply Nat.eqb_eq in Heq'. subst.
+        apply in_union; auto.
+      + unfold binds in H. simpl in H.
+        apply in_union; auto.
+        right.
+        eapply IHl; eauto.
+        apply in_union in H.
+        intuition.
+        simpl in H1. intuition.
+        subst.
+        apply Nat.eqb_neq in Heq.
+        intuition.
+Qed.
+
+Lemma notin_remove: forall (pos : env A) pid,
+  pid # pos ->
+  remove pos pid = pos.
+Proof.
+  induction pos; simpl; intros.
+  - reflexivity.
+  - destruct a. simpl in H.
+    apply notin_union in H. intuition.
+    apply notin_neq in H0.
+    assert (Hneq : pid =? v = false) by (apply Nat.eqb_neq; intuition).
+    rewrite Hneq. f_equal; intuition.
+Qed.
+
+Lemma remove_neq_preserves_notin:
+  forall (pos : env A) pid pid',
+  pid # (remove pos pid') ->
+  pid <> pid' ->
+  pid # pos.
+Proof.
+  induction pos; simpl; intros.
+  - apply notin_empty.
+  - destruct a.
+    unfold "#". simpl.
+    apply notin_union.
+    destruct (pid' =? v)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst. intuition.
+      apply notin_neq; intuition.
+    -- unfold "#" in H.
+      simpl in H. apply notin_union in H.
+      intuition.
+      eapply IHpos; eauto.
+Qed.
+
+End MoreProperties.
+
+Section SubsetDef.
+
+Context {A : Type}.
+  
+Reserved Notation "E \subset F" (at level 70).
+Inductive subset : env A -> env A -> Prop :=
+  | subset_refl : forall E,
+      ok E ->
+      E \subset E
+  | subset_push_r : forall E F x T,
+      E \subset F ->
+      ok (F ; x ~ T) ->
+      E \subset F ; x ~ T
+  | subset_push_l : forall E F x T,
+      E \subset F ->
+      binds x T F ->
+      ok (E ; x ~ T) ->
+      E ; x ~ T \subset F
+where "E \subset F" := (subset E F).
+
+Definition sameset E F := subset E F /\ subset F E.
+Notation "E [=] F" := (sameset E F) (at level 69).
+
+
+Hint Constructors ok : core.
+Hint Constructors subset : core.
+
+Lemma subset_empty_core: forall E F,
+ ok (E ; F) ->
+ E \subset (E ; F).
+Proof.
+  induction F using env_ind; env_solve.
+Qed.
+
+Hint Resolve subset_empty_core : core.
+
+Lemma subset_empty : forall E,
+  ok E ->
+  \[] \subset E.
+Proof.
+  intros. remember \[] as F.
+  induction H; subst; env_solve.
+Qed.
+
+Hint Resolve subset_empty : core.
+
+Lemma subset_empty_inv : forall E,
+  E \subset \[] -> E = \[].
+Proof.
+  intros. inversion H; reflexivity || discriminate.
+Qed.
+
+Hint Resolve subset_empty_inv : core.
+
+Lemma subset_weaken: forall E E' x T,
+  (E ; x ~ T) \subset E' -> E \subset E'.
+Proof.
+  intros. remember (E; x ~ T) as D.
+  induction H; intros.
+  - subst. env_solve.
+  - env_solve.
+  - inversion HeqD; subst. assumption.
+Qed.
+
+Hint Resolve subset_weaken : core.
+
+Lemma subset_ok_inv : forall E F,
+  E \subset F ->
+  ok E /\ ok F.
+Proof.
+  intros. induction H; split; intuition.
+Qed.
+
+Lemma subset_ok_inv_l: forall E F,
+  E \subset F ->
+  ok E.
+Proof.
+  intros. apply subset_ok_inv in H; intuition.
+Qed.
+
+Lemma subset_ok_inv_r: forall E F,
+  E \subset F ->
+  ok F.
+Proof.
+  intros; apply subset_ok_inv in H; intuition.
+Qed.
+
+Hint Resolve subset_ok_inv_l : core.
+Hint Resolve subset_ok_inv_r : core.
+
+Lemma subset_ok : forall E F,
+  E \subset F ->
+  ok F ->
+  ok E.
+Proof.
+  intros. induction H; env_solve.
+Qed.
+
+Hint Resolve subset_ok : core.
+
+Lemma notin_dom_subset : forall E F x,
+  x # F ->
+  E \subset F ->
+  x # E.
+Proof.
+  intros. induction H0; env_solve. simpl.
+  apply notin_neq. generalize (binds_notin_neq H1 H).
+  intuition.
+Qed.
+
+Hint Resolve binds_notin_neq : core.
+Hint Resolve binds_push_neq : core.
+Hint Resolve binds_push_neq_inv : core.
+Hint Unfold binds : core.
+
+Lemma subset_binds : forall E F x T,
+  E \subset F ->
+  binds x T E ->
+  binds x T F.
+Proof.
+  intros. induction H; env_solve.
+  - destruct (eq_nat_dec x x0); env_solve.
+    -- subst. unfold binds in H0; simpl in H0.
+      rewrite (Nat.eqb_refl x0) in H0.
+      inversion H0. subst. assumption.
+Qed.
+
+Hint Resolve subset_binds : core.
+Hint Resolve ok_comm : core.
+Hint Resolve binds_push_eq : core.
+Hint Resolve ok_concat_inv : core.
+
+Lemma subset_comm : forall E x1 T1 x2 T2,
+  ok (E; x1 ~ T1; x2 ~ T2) ->
+  E; x1 ~ T1; x2 ~ T2 \subset E; x2 ~ T2; x1 ~ T1.
+Proof.
+  intros. generalize (ok_comm H); intro.
+  apply subset_push_l; env_solve.
+Qed.
+
+Hint Resolve subset_comm : core.
+
+Lemma subset_notin : forall E E' x,
+  E' \subset E ->
+  x # E ->
+  x # E'.
+Proof.
+  intros. induction H; env_solve.
+  - apply notin_neq.
+    generalize (binds_notin_neq H1 H0); intuition.
+Qed.
+
+Hint Resolve subset_notin : core.
+Hint Resolve subset_ok_inv : core.
+Hint Resolve subset_binds : core.
+
+Lemma sameset_ok_inv : forall E F,
+  E [=] F -> ok E /\ ok F.
+Proof.
+  unfold "[=]". env_solve.
+Qed.
+
+Lemma sameset_inv : forall E F,
+  E [=] F -> E \subset F /\ F \subset E.
+Proof.
+  unfold "[=]". intros. intuition.
+Qed.
+
+Lemma sameset_inv_l: forall E F,
+  E [=] F -> E \subset F.
+Proof.
+  intros. apply sameset_inv in H; intuition.
+Qed.
+
+Lemma sameset_inv_r : forall E F,
+  E [=] F -> F \subset E.
+Proof.
+  intros. apply sameset_inv in H; intuition.
+Qed.
+
+Hint Resolve sameset_inv_l : core.
+Hint Resolve sameset_inv_r : core.
+
+Instance trans_subset : Transitive subset.
+Proof.
+  red. intros. induction H; env_solve.
+Qed.
+
+Hint Resolve trans_subset : core.
+
+Lemma sym_sameset : forall E F,
+  E [=] F -> F [=] E.
+Proof.
+  unfold sameset; env_solve.
+Qed.
+
+Hint Resolve sym_sameset : core.
+
+Lemma trans_sameset : forall E F G,
+  E [=] F ->
+  F [=] G ->
+  E [=] G.
+Proof.
+  unfold sameset. env_solve.
+Qed.
+
+Hint Resolve trans_sameset : core.
+
+Lemma sameset_subset_r : forall E F F',
+  E \subset F ->
+  F [=] F' ->
+  E \subset F'.
+Proof.
+  env_solve.
+Qed.
+
+Hint Resolve sameset_subset_r : core.
+
+Lemma sameset_comm : forall E x1 T1 x2 T2,
+  ok (E ; x1 ~ T1 ; x2 ~ T2) ->
+  E ; x1 ~ T1 ; x2 ~ T2 [=] E ; x2 ~ T2 ; x1 ~ T1.
+Proof.
+  intros. generalize (ok_comm H); intro.
+  apply subset_comm in H, H0;
+  unfold sameset; intuition.
+Qed.
+
+Hint Resolve sameset_comm : core.
+
+Lemma subset_concat_r : forall E F G,
+  E \subset F ->
+  ok (F ; G) ->
+  E \subset F ; G.
+Proof.
+  intros. induction G using env_ind; env_solve.
+Qed.
+
+Hint Resolve subset_concat_r : core.
+
+Lemma subset_push : forall E E' x T,
+  E \subset E' ->
+  ok (E' ; x ~ T) ->
+  E ; x ~ T \subset E' ; x ~ T.
+Proof.
+  intros.
+  induction H.
+  - env_solve.
+  - apply subset_push_l; env_solve. env_solve.
+  - apply subset_push_l; env_solve.
+Qed.
+
+Hint Resolve subset_push : core.
+
+Lemma subset_concat : forall E E' F,
+  E \subset E' ->
+  ok (E' ; F) ->
+  E ; F \subset E' ; F.
+Proof.
+  intros. induction F using env_ind; env_solve.
+Qed.
+
+Hint Resolve subset_concat : core.
+
+Lemma sameset_ok : forall E F,
+  E [=] F ->
+  ok E ->
+  ok F.
+Proof.
+  intros. unfold sameset in H; env_solve.
+Qed.
+
+Hint Resolve sameset_ok : core.
+
+Lemma notin_sameset : forall x E F,
+  x # E ->
+  E [=] F ->
+  x # F.
+Proof.
+  intros. unfold sameset in H0; env_solve.
+Qed.
+
+Hint Resolve notin_sameset : core.
+
+
+Lemma notin_sameset_concat : forall x E E' F,
+  x # (E ; F) ->
+  E [=] E' ->
+  x # (E' ; F).
+Proof.
+  induction F using env_ind; env_solve.
+Qed.
+
+Hint Resolve notin_sameset_concat : core.
+
+Lemma sameset_ok_concat_l : forall E E' F,
+  E [=] E' ->
+  ok (E; F) ->
+  ok (E'; F).
+Proof.
+  induction F using env_ind; env_solve.
+Qed.
+
+Hint Resolve sameset_ok_concat_l : core.
+
+Lemma sameset_ok_concat_r : forall E F F',
+  F [=] F' ->
+  ok (E; F) ->
+  ok (E; F').
+Proof.
+  intros. apply ok_concat_comm.
+  apply ok_concat_comm in H0. env_solve.
+Qed.
+
+Hint Resolve sameset_ok_concat_r : core.
+
+Hint Unfold sameset : core.
+
+Lemma sameset_concat : forall E E' F,
+  E [=] E' ->
+  ok (E ; F) ->
+  E ; F [=] E' ; F.
+Proof.
+  unfold sameset; env_solve.
+Qed.
+
+
+Lemma sameset_push_eq: forall E E' x v,
+  E [=] E' ->
+  x # E ->
+  (x,v) :: E [=] (x,v) :: E'.
+Proof.
+  intros.
+  apply sameset_concat with (F:=[(x,v)]); auto.
+  econstructor; eauto.
+Qed.
+
+Lemma subset_congruence: forall E F F',
+  F \subset F' ->
+  ok (E; F) ->
+  ok (E; F') ->
+  E; F \subset E; F'.
+Proof.
+  induction 1; env_solve.
+  - constructor. assumption. apply binds_concat_right.
+    assumption. env_solve. notin_dom_solve.
+Qed.
+
+Hint Resolve subset_congruence : core.
+
+Lemma sameset_concat_r: forall E F F',
+  F [=] F' ->
+  ok (E ; F) ->
+  E ; F [=] E ; F'.
+Proof.
+  intros. assert (ok (E ; F')). env_solve.
+  unfold sameset; env_solve.
+Qed.
+
+Hint Resolve sameset_concat_r : core.
+
+Hint Resolve sameset_concat : core.
+
+Lemma sameset_refl: forall E,
+  ok E ->
+  E [=] E.
+Proof.
+  intros. induction H; env_solve.
+Qed.
+
+Hint Resolve sameset_refl : core.
+
+Lemma sameset_push_comm : forall E x T,
+  ok (E; x ~ T) ->
+  E; x ~ T [=] x ~ T; E.
+Proof.
+  induction E using env_ind; env_solve.
+  assert (E; x ~ v; x0 ~ T [=] E; x0 ~ T; x ~ v).
+  apply sameset_comm. env_solve. notin_dom_solve.
+  assert (E; x0 ~ T; x ~ v [=] x0 ~ T; (E; x ~ v)).
+  rewrite concat_assoc.
+  apply sameset_concat; env_solve. notin_dom_solve.
+  apply notin_neq in H3. apply notin_neq. intuition.
+  env_solve.
+Qed.
+
+Hint Resolve sameset_push_comm : core.
+
+Hint Resolve ok_remove : core.
+Hint Resolve ok_concat_comm : core.
+
+Lemma sameset_concat_comm: forall E F,
+  ok (E; F) ->
+  E; F [=] F; E.
+Proof.
+  induction E using env_ind; env_solve.
+  - simpl. unfold ";" in *. rewrite app_nil_r.
+    rewrite app_nil_r in H.
+    env_solve.
+  - generalize (IHE (x ~ v; F)); intro.
+    rewrite concat_assoc in H0. intuition.
+    assert (x ~ v; F; E [=] F; (E; x ~ v)).
+    rewrite concat_assoc.
+    rewrite <-concat_assoc.
+    apply sym_sameset.
+    apply sameset_push_comm. env_solve.
+    apply ok_middle_inv in H. notin_dom_solve.
+    env_solve.
+Qed.
+
+Lemma push_inv: forall x (l : env A),
+  x :: l = [x] ++ l.
+Proof.
+  intros; simpl; auto.
+Qed.
+
+Lemma sameset_empty: forall (l : env A),
+  sameset [] l ->
+  l = [].
+Proof.
+  intros. unfold sameset in H. intuition.
+Qed.
+
+Lemma sameset_ExF_xEF: forall x (E F: env A),
+  ok (E ++ (x :: F)) ->
+  sameset (E ++ (x :: F))
+          (x :: (E ++ F)).
+Proof.
+  intros.
+  assert (sameset (E ++ (x :: F)) ((x :: F) ++ E)).
+  eapply sameset_concat_comm with (E:=(x :: F)). auto.
+  simpl in H0.
+  assert (sameset (x :: F ++ E) (x :: E ++ F)).
+  rewrite push_inv.
+  rewrite push_inv with (l:=E ++ F).
+  eapply sameset_concat with (F:=[x]).
+  eapply sameset_concat_comm.
+  eapply ok_remove with (F:=[x]) in H.
+  eapply ok_concat_comm. auto.
+  simpl. apply sameset_ok_inv in H0; intuition.
+  eapply trans_sameset; eauto.
+Qed.
+
+Lemma sameset_con_remove: forall (pos : env A) pid v,
+  ok pos ->
+  binds pid v pos ->
+  sameset ((pid, v) :: remove pos pid) pos.
+Proof.
+  induction 1; simpl; intros.
+  - inversion H.
+  - unfold binds in H1. simpl in H1.
+    destruct (pid =? x)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst.
+      inversion H1; subst.
+      apply sameset_refl; auto.
+      econstructor; eauto.
+    -- apply Nat.eqb_neq in Heq.
+      assert (Hneq: pid =? x = false).
+      apply Nat.eqb_neq; intuition.
+      apply IHok in H1.
+      eapply sameset_concat with (F:=[(x, T)]) in H1.
+      simpl in H1.
+      eapply trans_sameset; eauto.
+      assert (((pid, v) :: (x, T) :: remove E pid)
+      = [(pid, v)] ++ (x, T) :: remove E pid).
+      reflexivity.
+      rewrite H2.
+      assert (((x, T) :: (pid, v) :: remove E pid)
+      = (x, T) :: [(pid, v)] ++ remove E pid).
+      reflexivity.
+      rewrite H3.
+      apply sameset_ExF_xEF.
+      econstructor; eauto.
+      econstructor; eauto.
+      apply remove_preserves_ok; auto.
+      apply remove_preserves_notin; auto.
+      simpl. apply notin_union.
+      intuition.
+      apply notin_neq; intuition.
+      apply ok_remove_notin; auto.
+      econstructor; eauto.
+Qed.
+
+Lemma sameset_congruence: forall E E1 E1' F,
+  E1 [=] E1' ->
+  E [=] E1; F ->
+  E [=] E1' ; F.
+Proof.
+  env_solve.
+Qed.
+
+Hint Resolve sameset_congruence : core.
+
+Lemma sameset_ok_inv_r: forall (E : env A) F,
+  sameset E F ->
+  ok F.
+Proof.
+  apply sameset_ok_inv.
+Qed.
+
+Lemma sameset_binds: forall E F x (T : A),
+  sameset E F ->
+  binds x T E ->
+  binds x T F.
+Proof.
+  unfold sameset; intros.
+  eapply subset_binds; eauto.
+Qed.
+
+Lemma sameset_subset_l : forall (E : env A) E' F,
+  subset E F ->
+  sameset E E' ->
+  subset E' F.
+Proof.
+  intros. unfold sameset in H0.
+  intuition. eapply trans_subset; eauto.
+Qed.
+
+Lemma remove_preserves_subset: forall (E : env A) x,
+  ok E ->
+  subset (remove E x) E.
+Proof.
+  induction 1; intros.
+  - simpl. apply subset_refl.
+    econstructor.
+  - simpl.
+    destruct (x =? x0)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst. apply subset_push_r.
+      apply subset_refl. assumption.
+      econstructor; eauto.
+    -- apply subset_push.
+      assumption.
+      econstructor; eauto.
+Qed.
+
+Lemma subset_remove: forall (E : env A) E' x,
+  subset E E' ->
+  subset (remove E x) (remove E' x).
+Proof.
+  induction 1; intros.
+  - apply subset_refl.
+    apply remove_preserves_ok; auto.
+  - eapply trans_subset; eauto.
+    simpl.
+    destruct (x =? x0)eqn:Heq.
+    -- apply remove_preserves_subset.
+      inversion H0; subst; intuition.
+    -- eapply subset_push_r.
+      apply subset_refl.
+      apply remove_preserves_ok; auto.
+      inversion H0; subst; intuition.
+      econstructor; eauto.
+      apply remove_preserves_notin; auto.
+      inversion H0; subst; intuition.
+  - simpl.
+    destruct (x =? x0)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst.
+      assert (remove E x0 = E).
+      rewrite notin_remove; auto.
+      inversion H1; subst; intuition.
+      rewrite H2 in IHsubset.
+      assumption.
+    -- apply Nat.eqb_neq in Heq.
+      apply subset_push_l; auto.
+      apply remove_neq_preserves_binds; auto.
+      econstructor; eauto.
+      apply remove_preserves_notin; auto.
+      inversion H1; subst; intuition.
+Qed.
+
+Lemma sameset_remove: forall (E : env A) E' x,
+  sameset E E' ->
+  sameset (remove E x) (remove E' x).
+Proof.
+  unfold sameset; intros.
+  intuition.
+  apply subset_remove; auto.
+  apply subset_remove; auto.
+Qed.
+
+Lemma sameset_binds_remove: forall (pos : env A) n p,
+  ok pos ->
+  binds n p pos ->
+  sameset pos ((n, p) :: remove pos n).
+Proof.
+  induction 1; intros.
+  - inversion H.
+  - unfold binds in H1. simpl in H1.
+    destruct (n =? x)eqn:Heq.
+    -- apply Nat.eqb_eq in Heq.
+      subst. inversion H1; subst.
+      simpl.
+      rewrite Nat.eqb_refl.
+      apply sameset_refl.
+      econstructor; eauto.
+    -- simpl.
+      apply IHok in H1.
+      assert (
+        sameset
+        ((x, T) :: E)
+        ((x, T) :: (n, p) :: remove E n)
+      ).
+      apply sameset_concat with (F:=[(x,T)]); auto.
+      econstructor; eauto.
+      eapply trans_sameset; eauto.
+      assert ((x, T) :: (n, p) :: remove E n
+      = [(x,T)] ++ (n,p) :: remove E n).
+      reflexivity.
+      rewrite H3.
+      assert ((n, p) :: (x, T) :: remove E n
+      = (n,p) :: [(x,T)] ++ remove E n).
+      reflexivity.
+      rewrite Heq.
+      rewrite H4.
+      apply sameset_ExF_xEF; eauto.
+Qed.
+
+End SubsetDef.
+
+Section test.
+
+Existing Class ok.
+
+Context {A : Type}.
+
+Instance refl_R a : ok a -> Proper (@sameset A) a.
+Proof.
+  intros. unfold Proper.
+  apply sameset_refl. assumption.
+Qed.
+
+Hint Extern 0 (ok _) => (assumption || shelve) : typeclass_instances.
+
+End test.
+
+Instance sameset_symmetry {A} : Symmetric (@sameset A).
+Proof.
+  red. apply sym_sameset.
+Qed.
+
+Instance sameset_transitivy {A} : Transitive (@sameset A).
+Proof.
+  red. apply trans_sameset.
+Qed.
+
+Instance binds_Proper {A} :
+  Proper (eq ==> eq ==> sameset ==> Basics.impl) (@binds A).
+Proof.
+  intros x1 x2 Heq1 T1 T2 Heq2 E F Hsame H1. subst.
+  eapply sameset_binds; eauto.
+Qed.
+
+Instance ok_Proper {A} :
+  Proper (sameset ==> Basics.impl) (@ok A).
+Proof.
+  intro.
+  intro.
+  intro.
+  intro.
+  eapply sameset_ok; eauto.
+Qed.
+
+Instance notin_Proper {A} :
+  Proper (eq ==> sameset ==> iff) (fun x (E : env A) => x # E).
+Proof.
+  intros x1 x2 Heq1 E F Hsame.
+  intuition. subst.
+  eapply notin_sameset; eauto.
+  intuition. subst.
+  eapply notin_sameset; eauto.
+  apply sym_sameset; auto.
+Qed.
+
+Instance remove_Proper {A} :
+  Proper (sameset ==> eq ==> sameset) (@remove A).
+Proof.
+  intros E F Hsame x1 x2 Heq1. subst.
+  apply sameset_remove; auto.
+Qed.
+
+Lemma example_usage {A} E F x (T : A) :
+  sameset E F ->
+  binds x T F ->
+  binds x T E.
+Proof.
+  intros HE Hbind.
+  rewrite HE. assumption.
+Qed.
+
+Lemma example_usage' {A} (E : env A) F:
+  sameset E F ->
+  ok E ->
+  ok F.
+Proof.
+  intros HE Hbind.
+  rewrite <-HE. assumption.
+Qed.
+
+Lemma remove_usage {A} (E : env A) F x G :
+  sameset E F ->
+  sameset G (remove F x) ->
+  sameset G (remove E x).
+Proof.
+  intros HE Hsame.
+  rewrite HE. assumption.
+Qed.
