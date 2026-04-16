@@ -254,11 +254,10 @@ opam pin add coq 8.20.1
 
 ### 4.2. Instructions for compiling the Rocq code
 
-Download the source code from github (If you are using the docker image, ignore this).
+Download the source code from github (If you are using the docker image, ignore this):
 
-TODO:
 ```
-    git clone https://github.com/SJTU-PLV/compcertoc-pldi25-artifact.git
+git clone git@github.com:Sam-Ni/verified-concurrent-objects-ecoop2026-artifact.git
 ```
 
 The Rocq code is located in the `src` directory.
