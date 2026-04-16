@@ -64,7 +64,7 @@ statics:
 	@echo "===== Bounded queue: Proof of invariants ====="
 	@cd src && coqwc ArrayQueueInvariant*.v Identity.v
 	@echo ""
-	@echo "===== Summary (mannully calculated from the above results) ====="
+	@echo "===== Summary (manually calculated from the above results) ====="
 	@echo "Basic Data Types:            1730 lines"
 	@echo "LTS definitions:             1307 lines"
 	@echo "Refinement & Simulation:     1888 lines"

@@ -8,3 +8,4 @@ Makefile.conf
 *.vo*
 _CoqProject
 *.mk*
+!.dockerignore
