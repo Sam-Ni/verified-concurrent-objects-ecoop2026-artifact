@@ -362,20 +362,20 @@ coqwc RawTensor.v RawCompose.v HE.v VE.v SyncCompLTS.v Tensor.v ImplTensor.v HCo
 The last row of result should be 
 
 ```
-2054     8499       67 total#10553
+2045     9192       67 total#11237
 ```
 
-We used 11k(10554) lines of code for horizontal and vertical compositionality with composition rules Link and Weaken.
+We used 11k(11237) lines of code for horizontal and vertical compositionality with composition rules Link and Weaken.
 
 #### The Entire Framework
 
 The total LOC of the framework is the sum of the LOC of the four components listed above.
 
 ```
-1730 + 1307 + 1888 + 10553 = 15478
+1730 + 1307 + 1888 + 11237 = 16162
 ```
 
-Therefore, the entire framework consists of 15.5k(15478) lines of code (LOC).
+Therefore, the entire framework consists of 16.1k(16162) lines of code (LOC).
 
 #### Register-Counter-Timer example
 
@@ -422,7 +422,7 @@ The last row of result should be
 1776     5658      121 total#7434
 ```
 
-Totally, we used 53.6k(53600) lines of code to prove the bounded queue example.
+We used 7.4k(7434) lines of code for basic definitions and the skeleton of simulation proofs.
 
 **establishing verified concurrent layers**
 
@@ -451,7 +451,7 @@ coqwc ArrayQueueInvariant*.v Identity.v
 The last row of result should be 
 
 ```
-4882    35858      736 total#40740
+4630    35250      736 total#39880
 ```
 
-Therefore, we used 40k(40740) lines of code  for proving that a set of mutually dependent invariants hold for ENQ and DEQ of the bounded queue.
+Therefore, we used 40k(39880) lines of code  for proving that a set of mutually dependent invariants hold for ENQ and DEQ of the bounded queue.
