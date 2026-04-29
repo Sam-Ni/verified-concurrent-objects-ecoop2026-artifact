@@ -303,7 +303,7 @@ which should show no admit.
 
 ### 5.2. Proof effort
 
-The following instructions describe how to reproduce the lines of code (LOC) for each component of our implementation, as reported in Section 7 (lines 788–799). The reported LOC corresponds to the sum of specification and proof lines (i.e., the first two columns of outputs by `coqwc`), excluding comments. The exact numbers may differ slightly from those in the submission, since some files contain code spanning multiple components. However, the total LOC remains consistent with the LOC reported in the submission.
+The following instructions describe how to reproduce the lines of code (LOC) for each component of our implementation, as reported in Section 7 (lines 788–799). The reported LOC corresponds to the sum of specification and proof lines (i.e., the first two columns of the output by `coqwc`), excluding comments. The exact numbers may differ slightly from those in the submission, since some files contain code spanning multiple components. However, the total LOC remains consistent with the LOC reported in the submission.
 
 #### Basic Data Types
 
