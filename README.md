@@ -303,7 +303,7 @@ which should show no admit.
 
 ### 5.2. Proof effort
 
-The following instructions describe how to reproduce the lines of code (LOC) for each component of our implementation, as reported in Section 7 (lines 788–799). The exact numbers may differ slightly from those in the submission, since some files contain code spanning multiple components. However, the total LOC remains consistent with the LOC reported in the submission.
+The following instructions describe how to reproduce the lines of code (LOC) for each component of our implementation, as reported in Section 7 (lines 788–799). The reported LOC corresponds to the sum of specification and proof lines (i.e., the first two columns of outputs by `coqwc`), excluding comments. The exact numbers may differ slightly from those in the submission, since some files contain code spanning multiple components. However, the total LOC remains consistent with the LOC reported in the submission.
 
 #### Basic Data Types
 
@@ -316,10 +316,10 @@ coqwc Lib*.v
 The last row of the results should be
 
 ```
-642     1088        0 total#1730
+642     1088        0 total
 ```
 
-Therefore, we used 1.7k(1730) lines of code to formalize basic data types.
+Therefore, we used 1.7k(1730 = 642 + 1088) lines of code to formalize basic data types.
 
 #### Definiton of Labelled Transition Systems
 
@@ -330,10 +330,10 @@ coqwc LTS.v SyncLTS.v
 
 The last row of result should be 
 ```
-785      522       35 total#1307
+785      522       35 total
 ```
 
-We used 1.3k(1307) lines of code to formalize transition systems and the sequential consistency operator. 
+We used 1.3k(1307 = 785 + 522) lines of code to formalize transition systems and the sequential consistency operator. 
 
 #### Trace Refinement, Simulation and Verified Concurrent Object
 
@@ -346,10 +346,10 @@ coqwc BSim.v ComposedRefinement.v ImplRefinement.v Invariants.v Refinement.v Ver
 The last row of result should be 
 
 ```
-566     1322        4 total#1888
+566     1322        4 total
 ```
 
-We used 1.8k(1888) lines of code  to define trace refinement, forward/backward simulation and verified concurrent objects.
+We used 1.8k(1888 = 566 + 1322) lines of code  to define trace refinement, forward/backward simulation and verified concurrent objects.
 
 #### Compositionality
 
@@ -362,14 +362,14 @@ coqwc RawTensor.v RawCompose.v HE.v VE.v SyncCompLTS.v Tensor.v ImplTensor.v HCo
 The last row of result should be 
 
 ```
-2045     9192       67 total#11237
+2045     9192       67 total
 ```
 
-We used 11k(11237) lines of code for horizontal and vertical compositionality with composition rules Link and Weaken.
+We used 11k(11237 = 2045 + 9192) lines of code for horizontal and vertical compositionality with composition rules Link and Weaken.
 
 #### The Entire Framework
 
-The total LOC of the framework is the sum of the LOC of the four components listed above.
+The total LOC of the framework is computed as the sum of the LOC of the four components listed above: basic data types (1730), definition of labeled transition systems (1307), trace refinement, simulation, and verified concurrent objects (1888), and compositionality (11237).
 
 ```
 1730 + 1307 + 1888 + 11237 = 16162
@@ -387,10 +387,10 @@ coqwc Register*.v Counter*.v Timer.v TickNat.v
 
 The last row of result should be 
 ```
-1417     4130       53 total#5547
+1417     4130       53 total
 ```
 
-We used 5.5k(5547) lines of code to prove the Register-Counter-Timer example.
+We used 5.5k(5547 = 1417 + 4130) lines of code to prove the Register-Counter-Timer example.
 
 #### The bounded queue example
 
@@ -401,10 +401,10 @@ coqwc A*.v Q*.v KInduction.v Identity.v VeriTactics.v
 
 The last row of result should be 
 ```
-6998    46602     1156 total#53600
+6998    46602     1156 total
 ```
 
-Totally, we used 53.6k(53600) lines of code to prove the bounded queue example.
+Totally, we used 53.6k(53600 = 6998 + 46602) lines of code to prove the bounded queue example.
 
 Below, we report the LOC for each component in the bounded queue example.
 
@@ -419,10 +419,10 @@ coqwc AQC.v Array.v ArrayProp.v ArrayQueue.v ArrayQueueImpl.v ArrayQueueImplProp
 The last row of result should be 
 
 ```
-1776     5658      121 total#7434
+1776     5658      121 total
 ```
 
-We used 7.4k(7434) lines of code for basic definitions and the skeleton of simulation proofs.
+We used 7.4k(7434 = 1776 + 5658) lines of code for basic definitions and the skeleton of simulation proofs.
 
 **establishing verified concurrent layers**
 
@@ -435,10 +435,10 @@ coqwc ArrayCorrectness.v ArraySC.v ArrayQueueImplSC.v ArrayQueueReduceSC.v Array
 The last row of result should be 
 
 ```
-592     5694      299 total#6286
+592     5694      299 total
 ```
 
-We used 6.2k(6286) lines of code for proving sequential consistency of the LTS to establish verified concurrent layers.
+We used 6.2k(6286 = 592 + 5694) lines of code for proving sequential consistency of the LTS to establish verified concurrent layers.
 
 **proof of invariants hold for the bounded queue**
 
@@ -451,7 +451,7 @@ coqwc ArrayQueueInvariant*.v Identity.v
 The last row of result should be 
 
 ```
-4630    35250      736 total#39880
+4630    35250      736 total
 ```
 
-Therefore, we used 40k(39880) lines of code  for proving that a set of mutually dependent invariants hold for ENQ and DEQ of the bounded queue.
+Therefore, we used 40k(39880 = 4630 + 35250) lines of code  for proving that a set of mutually dependent invariants hold for ENQ and DEQ of the bounded queue.
