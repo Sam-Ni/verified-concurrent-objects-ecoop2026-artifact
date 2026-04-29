@@ -76,7 +76,7 @@ statistics:
 	@cd src && coqwc ArrayQueueInvariant*.v Identity.v
 	@echo ""
 
-	@echo "===== Summary (automatically computed from coqwc) ====="
+	@echo "===== Summary (spec + proof lines only; comments excluded) ====="
 
 	@basic=$$(awk 'END {print $$1+$$2}' $(STAT_TMP)_basic.txt); \
 	lts=$$(awk 'END {print $$1+$$2}' $(STAT_TMP)_lts.txt); \
@@ -89,7 +89,7 @@ statistics:
 	echo "LTS definitions:             $$lts lines"; \
 	echo "Refinement & Simulation:     $$refine lines"; \
 	echo "Compositionality:            $$comp lines"; \
-	echo "Total framework:             $$total_framework lines"; \
+	echo "Total framework:             $$total_framework lines (sum of the four components above)"; \
 	echo "Register-Counter-Timer:      $$rct lines"; \
 	echo "Bounded queue (total):       $$bq lines"; \
 	echo ""
