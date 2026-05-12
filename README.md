@@ -146,7 +146,7 @@ We list the definitions, lemmas and theorems from each section of the submission
 
 - The statement of verified queue applied LINK and WEAKEN rules from Section 3.4 (line 523, equation 4) corresponds to [verified_queue_link_and_weaken](src/QC.v#L1074) in the Rocq file [src/QC.v](src/QC.v).
 
-- The statement of trace refinement for the verified queue from Section 3.4 (line 523, equation 4) corresponds to [whole_queue_correctness](src/QC.v#L1123) in the Rocq file [src/QC.v](src/QC.v).
+- The statement of trace refinement for the verified queue from Section 3.4 (line 525, equation 5) corresponds to [whole_queue_correctness](src/QC.v#L1123) in the Rocq file [src/QC.v](src/QC.v).
 
 ### Section 4
 
